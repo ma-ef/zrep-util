@@ -42,12 +42,12 @@ function headerblock () {
 }
 
 function log() {
-        echo $1
+        echo "$1"
         echo `$DATE_COMMAND '+%Y/%m/%d %H:%M:%S'` " INFO:" $1 >>${logfile}
 }
 
 function logne() {
-        echo -ne $1
+        echo -ne "$1"
         echo -ne `$DATE_COMMAND '+%Y/%m/%d %H:%M:%S'` " INFO:" $1 >>${logfile}
 }
 
@@ -91,17 +91,27 @@ zreptag() {
 # initialize routine, takes pool as argument
 initializepool() {
   zreptag "$1"
+  set +x
   _SNAP_FIRST=$($_command_src zfs list -H -t snapshot -o name -s creation "$1" | head -n1)
-  log "First snapshot on source pool: $_SNAP_FIRST"
-  logne "Creating new snapshot on $source..                  "
-  $_command_src zfs snap "$1"@"$_ZFS_TAG"_000000 || { log "[FAILED], exiting now"; return 1; } 
-  log "[OK]"
+  if [[ -z "$_SNAP_FIRST" ]]; then
+    log "No snapshot on source pool found."
+    logne "Creating new snapshot on $source..                  "
+    $_command_src zfs snap "$1"@"$_ZFS_TAG"_000000 || { log "[FAILED], exiting now"; return 1; }
+    _SNAP_FIRST="$1"@"$_ZFS_TAG"_000000
+    log "[OK]"
+  else
+    log "First snapshot on source pool: $_SNAP_FIRST"
+    logne "Creating new snapshot on $source..                  "
+    $_command_src zfs snap "$1"@"$_ZFS_TAG"_000000 || { log "[FAILED], exiting now"; return 1; } 
+    log "[OK]"
+  fi
   logne "Creating configuration on source $source..          "
   $_command_src "$_ZFS_TAG_OPT" "$source_zrep_command" changeconfig -f $1 "$destination" "$destination_parent_dataset"/"$1" || { log "[FAILED], exiting now"; return 1; }
   # this puts the file test_pipe on 10.242.0.2
   # ssh root@10.242.0.2 ssh root@10.241.0.1 hostname ">" test_pipe
   log "[OK]"
   logne "Sending first snapshot from $source to $destination.. "
+  log "$_command_dst $_command_src zfs send $_SNAP_FIRST | zfs recv -o canmount=noauto -o readonly=on -o encryption=on -Fu $destination_parent_dataset/$1"
   $_command_dst $_command_src zfs send "$_SNAP_FIRST" "| pv |" zfs recv -o "canmount=noauto" -o "readonly=on" -o "encryption=on" -Fu "$destination_parent_dataset"/"$1" || { log "[FAILED], exiting now"; return 1; }
   log "[OK]"
   logne "Sending all intermediate snapshots from $source to $destination.."
@@ -466,17 +476,11 @@ verify(){
 # skip: optional argument with valid values of src or dst
 #       if given, it will skip validation of the src or dst 
 srcconfig() {
-  if ! [[ -f "$cfg_file" ]]; then 
-    echo "error: default config file $cfg_file does not exist"
-  fi
   set -o allexport
   source "$cfg_file"
   set +o allexport
   # check pools options
-  #[[ -z "$pools" ]] || { echo "error: definition of pools in config file $cfg_file must at least contain one pool"; exit 1; }
-  (( ${#pools[@]} != 0 )) || { echo "error: definition of pools in config file $cfg_file must at least contain one pool"; exit 1; }
   # skip src check (for options backup and verify)
-  if ! [[ "$1" == "src" ]]; then
     src_user="${source%%@*}"
     src_host="${source#*@}"
     # check login at src 
@@ -498,10 +502,10 @@ srcconfig() {
     # check zrep command on src
     source_zrep_command=${source_zrep_command:-zrep}
     $_command_src "$source_zrep_command" >/dev/null || { echo "error: failed to execute zrep script on source server as defined in config file $cfg_file"; exit 1; }
-  fi
   if ! [[ "$1" == "dst" ]]; then
     dst_user="${destination%%@*}"
     dst_host="${destination#*@}"
+    echo "$destination $dst_host"
     # check login backup destination
     if [[ "$dst_host" != "localhost" ]]; then
       _command_dst="ssh $destination"
@@ -525,7 +529,7 @@ srcconfig() {
   # log file
   logfile=${logfile:-/dev/null}
   [[ -f $logfile ]] || touch $logfile
-  [[ -w $logfile ]] || { echo "error: failed to login on destination server as defined in config file $cfg_file"; exit 1; }
+  [[ -w $logfile ]] || { echo "error: failed to write to logfile $logfile"; exit 1; }
   use_custom_tag=${use_custom_tag:-false}
   custom_flag_src=${custom_flag_src:-}
   custom_flag_dst=${custom_flag_dst:-}
