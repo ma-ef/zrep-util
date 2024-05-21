@@ -12,8 +12,9 @@ POOL="data0"
 source# zfs destroy -r "$POOL/test"; zfs create "$POOL/test" && zfs allow -u zsbackup send,hold,snapshot,userprop data0/test
 
 # on the destination host:
+SOURCEPOOL="data0"
 POOL="remote_backup"
-destination# zfs destroy -r /test_parent; zfs create -o canmount=off remote_backup/test_parent && zfs allow -u zrbackup create,mount,receive,userprop remote_backup/test_parent && zfs create remote_backup/test_parent/data0
+destination# zfs destroy -r "$POOL/test_parent"; zfs create -o canmount=off "$POOL/test_parent" && zfs allow -u zrbackup create,mount,receive,userprop "$POOL/test_parent" && zfs create "$POOL/test_parent/$SOURCEPOOL"
 ```
 Now create the configuration file test.cfg for the script (usually on the destination host) with this content
 ```shell
