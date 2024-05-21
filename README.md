@@ -1,5 +1,5 @@
 # zrep-util
-Shell script to simplify administration of backups by utilizing zrep
+Shell script to simplify administration of backups by utilizing [zrep](https://github.com/bolthole/zrep)
 
 
 ## Usage/Examples
